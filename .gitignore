@@ -5,3 +5,10 @@ build
 *.log
 .DS_Store
 .vercel
+.env
+.env.*
+!.env.example
+.app-data/
+.browser-evidence/
+*.tsbuildinfo
+.server/

@@ -2,6 +2,7 @@ import { useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import { Avatar, Badge, Button, Card } from "./ui";
 import { useAppStore } from "../hooks/useAppStore";
+import { useAction } from "../hooks/useAction";
 import type { Task, TaskStatus } from "../types/app";
 
 export const kanbanColumns: TaskStatus[] = [
@@ -9,7 +10,7 @@ export const kanbanColumns: TaskStatus[] = [
   "Todo",
   "In Progress",
   "Review",
-  "Completed"
+  "Completed",
 ];
 
 const columnAccent: Record<TaskStatus, string> = {
@@ -17,7 +18,7 @@ const columnAccent: Record<TaskStatus, string> = {
   Todo: "bg-sky-400",
   "In Progress": "bg-brand-500",
   Review: "bg-amber-400",
-  Completed: "bg-emerald-500"
+  Completed: "bg-emerald-500",
 };
 
 /**
@@ -28,7 +29,8 @@ const columnAccent: Record<TaskStatus, string> = {
  * working fallback through the keyboard and the Prev/Next buttons on each card.
  */
 export function KanbanBoard({ tasks }: { tasks: Task[] }) {
-  const { projects, members, moveTask, pushToast } = useAppStore();
+  const { projects, members, moveTask } = useAppStore();
+  const action = useAction();
 
   const [draggingId, setDraggingId] = useState<string | null>(null);
   const [overColumn, setOverColumn] = useState<TaskStatus | null>(null);
@@ -46,8 +48,7 @@ export function KanbanBoard({ tasks }: { tasks: Task[] }) {
 
     if (!task || task.status === status) return;
 
-    moveTask(task.id, status);
-    pushToast({ title: "Task moved", description: `${task.title} moved to ${status}.` });
+    void action.run(() => moveTask(task.id, status), "Task moved");
   }
 
   /** Keyboard equivalent of a drag, so the board is not mouse-only. */
@@ -55,14 +56,13 @@ export function KanbanBoard({ tasks }: { tasks: Task[] }) {
     const index = kanbanColumns.indexOf(task.status);
     const next = kanbanColumns[index + direction];
     if (!next) return;
-    moveTask(task.id, next);
-    pushToast({ title: "Task moved", description: `${task.title} moved to ${next}.` });
+    void action.run(() => moveTask(task.id, next), "Task moved");
   }
 
   return (
     // Horizontal scroll keeps all five columns reachable on narrow screens.
     <div className="-mx-4 overflow-x-auto px-4 pb-2 sm:mx-0 sm:px-0">
-      <div className="grid min-w-[900px] gap-4 xl:min-w-0 xl:grid-cols-5">
+      <div className="grid min-w-[1100px] grid-cols-5 gap-4">
         {kanbanColumns.map((column) => {
           const columnTasks = tasks.filter((task) => task.status === column);
           const isOver = overColumn === column;
@@ -92,7 +92,9 @@ export function KanbanBoard({ tasks }: { tasks: Task[] }) {
             >
               <div className="mb-4 flex items-center justify-between">
                 <p className="flex items-center gap-2 font-semibold">
-                  <span className={`h-2.5 w-2.5 rounded-full ${columnAccent[column]}`} />
+                  <span
+                    className={`h-2.5 w-2.5 rounded-full ${columnAccent[column]}`}
+                  />
                   {column}
                 </p>
                 <Badge>{columnTasks.length}</Badge>
@@ -112,15 +114,19 @@ export function KanbanBoard({ tasks }: { tasks: Task[] }) {
                 ) : null}
 
                 {columnTasks.map((task) => {
-                  const project = projects.find((item) => item.id === task.projectId);
-                  const member = members.find((item) => item.id === task.assigneeId);
+                  const project = projects.find(
+                    (item) => item.id === task.projectId,
+                  );
+                  const member = members.find(
+                    (item) => item.id === task.assigneeId,
+                  );
                   const index = kanbanColumns.indexOf(task.status);
                   const dragging = draggingId === task.id;
 
                   return (
                     <article
                       key={task.id}
-                      draggable
+                      draggable={!action.pending}
                       onDragStart={(event) => {
                         event.dataTransfer.effectAllowed = "move";
                         event.dataTransfer.setData("text/plain", task.id);
@@ -181,11 +187,15 @@ export function KanbanBoard({ tasks }: { tasks: Task[] }) {
                       </div>
 
                       <div className="mt-4 flex items-center justify-between gap-2">
-                        {member ? <Avatar name={member.name} status={member.status} /> : <span />}
+                        {member ? (
+                          <Avatar name={member.name} status={member.status} />
+                        ) : (
+                          <span />
+                        )}
                         <div className="flex gap-2">
                           <Button
                             variant="secondary"
-                            disabled={index === 0}
+                            disabled={action.pending || index === 0}
                             aria-label={`Move ${task.title} to the previous column`}
                             onClick={() => shiftTask(task, -1)}
                           >
@@ -193,7 +203,10 @@ export function KanbanBoard({ tasks }: { tasks: Task[] }) {
                           </Button>
                           <Button
                             variant="secondary"
-                            disabled={index === kanbanColumns.length - 1}
+                            disabled={
+                              action.pending ||
+                              index === kanbanColumns.length - 1
+                            }
                             aria-label={`Move ${task.title} to the next column`}
                             onClick={() => shiftTask(task, 1)}
                           >

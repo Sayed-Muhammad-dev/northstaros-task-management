@@ -1,1240 +1,1039 @@
-import { CalendarRange, Download, Filter, FolderOpenDot, Plus, Search, Send, Trash2 } from "lucide-react";
-import { useMemo, useState } from "react";
+import { useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
-import { BarChart, DonutStat } from "../components/charts";
+import { CalendarDays, FolderKanban, Plus, Trash2 } from "lucide-react";
+import {
+  Avatar,
+  Badge,
+  Breadcrumbs,
+  Button,
+  Card,
+  EmptyState,
+  ErrorNotice,
+  Modal,
+  SearchInput,
+  SectionHeader,
+  Select,
+  TabButton,
+  Textarea,
+} from "../components/ui";
+import {
+  DetailsRow,
+  Metric,
+  Pagination,
+  Progress,
+  ProjectForm,
+  TaskForm,
+  TaskList,
+  priorities,
+  statuses,
+  usePagination,
+} from "../components/workspace";
 import { KanbanBoard } from "../components/KanbanBoard";
-import { Avatar, Badge, Breadcrumbs, Button, Card, EmptyState, Input, Modal, SearchInput, SectionHeader, Select, Switch, TabButton } from "../components/ui";
 import { useAppStore } from "../hooks/useAppStore";
-import { cn, formatDate, formatShortDate } from "../utils/helpers";
-
-function StatCard({ title, value, helper }: { title: string; value: string; helper: string }) {
-  return (
-    <Card>
-      <p className="text-sm text-slate-500 dark:text-slate-400">{title}</p>
-      <p className="mt-4 text-4xl font-semibold">{value}</p>
-      <p className="mt-3 text-sm text-slate-600 dark:text-slate-300">{helper}</p>
-    </Card>
-  );
-}
+import { useAction } from "../hooks/useAction";
+import { cn, dateInput, formatDate, formatTime } from "../utils/helpers";
+import type { Priority, TaskStatus } from "../types/app";
+export {
+  TeamMembersPage,
+  MessagesPage,
+  NotificationsPage,
+  ReportsPage,
+  AnalyticsPage,
+  SettingsPage,
+  ProfilePage,
+  HelpCenterPage,
+  NotFoundPage,
+} from "./WorkspacePages";
 
 export function DashboardPage() {
-  const { projects, tasks, notifications, members, currentProjectId, pushToast } = useAppStore();
-  const currentProject = projects.find((project) => project.id === currentProjectId) ?? projects[0];
-  const upcoming = tasks.filter((task) => task.status !== "Completed").slice(0, 4);
-
+  const store = useAppStore();
+  const today = dateInput(new Date());
+  const active = store.tasks.filter((t) => t.status !== "Completed");
+  const due = active
+    .filter((t) => t.dueDate >= today)
+    .sort((a, b) => a.dueDate.localeCompare(b.dueDate))
+    .slice(0, 5);
+  const completed = store.tasks.length - active.length;
   return (
-    <div className="space-y-8">
+    <>
       <SectionHeader
         eyebrow="Overview"
-        title={`${currentProject.name} delivery pulse`}
-        description="A premium snapshot of active work, deadlines, notifications, and reporting health."
+        title={"Welcome, " + (store.currentUser?.name.split(" ")[0] ?? "")}
+        description="Your workspace's current delivery picture."
         action={
-          <Button onClick={() => pushToast({ title: "Shared report", description: "Dashboard summary was sent to your leadership group." })}>
-            Share snapshot
-          </Button>
+          <Link to="/app/tasks">
+            <Button asChild>View tasks</Button>
+          </Link>
         }
       />
-
-      <div className="grid gap-6 md:grid-cols-2 xl:grid-cols-4">
-        <StatCard title="Open tasks" value={`${tasks.filter((task) => task.status !== "Completed").length}`} helper="Across active teams and current project scope." />
-        <StatCard title="Project progress" value={`${currentProject.progress}%`} helper="Delivery is tracking against launch milestones." />
-        <StatCard title="Upcoming deadlines" value={`${upcoming.length}`} helper="Needs review in the next seven days." />
-        <StatCard title="Unread alerts" value={`${notifications.filter((item) => !item.read).length}`} helper="Risk, comment, and digest notifications." />
+      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+        <Metric
+          label="Projects"
+          value={store.projects.filter((p) => p.status !== "Archived").length}
+          detail="Excludes archived projects"
+        />
+        <Metric label="Open tasks" value={active.length} />
+        <Metric label="Completed" value={completed} />
+        <Metric
+          label="Overdue"
+          value={active.filter((t) => t.dueDate < today).length}
+          detail="Open tasks due before today"
+        />
       </div>
-
-      <div className="grid gap-6 xl:grid-cols-[1.2fr_0.8fr]">
+      <div className="mt-6 grid gap-6 xl:grid-cols-[1.4fr_1fr]">
         <Card>
-          <SectionHeader title="Recent tasks" description="Most recent execution work across the active project." />
-          <div className="space-y-4">
-            {upcoming.map((task) => {
-              const assignee = members.find((member) => member.id === task.assigneeId);
-              return (
-                <Link key={task.id} to={`/app/tasks/${task.id}`} className="block rounded-3xl border border-slate-200/70 p-4 transition hover:-translate-y-0.5 hover:border-brand-200 dark:border-white/10 dark:hover:border-brand-500/30">
-                  <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
-                    <div>
-                      <p className="font-medium">{task.title}</p>
-                      <p className="mt-2 text-sm text-slate-600 dark:text-slate-300">{task.description}</p>
-                    </div>
-                    <div className="flex items-center gap-3">
-                      {assignee && <Avatar name={assignee.name} status={assignee.status} />}
-                      <Badge>{task.status}</Badge>
-                    </div>
-                  </div>
-                  <div className="mt-4 h-2 rounded-full bg-slate-200 dark:bg-white/10">
-                    <div className="h-full rounded-full bg-gradient-to-r from-brand-500 to-cyan-400" style={{ width: `${task.progress}%` }} />
-                  </div>
-                </Link>
-              );
-            })}
-          </div>
-        </Card>
-        <div className="grid gap-6">
-          <DonutStat value={87} label="Productivity" description="Blended score based on velocity, due date health, and task completion." />
-          <Card>
-            <SectionHeader title="Quick actions" />
-            <div className="grid gap-3">
-              {[
-                { label: "Create project", description: "Provision a new workspace stream." },
-                { label: "Open calendar", description: "Review due dates and scheduling." },
-                { label: "Send update", description: "Notify stakeholders instantly." },
-              ].map((action) => (
-                <button
-                  key={action.label}
-                  className="rounded-3xl border border-slate-200/70 p-4 text-left transition hover:border-brand-200 dark:border-white/10 dark:hover:border-brand-500/30"
-                  onClick={() => pushToast({ title: action.label, description: action.description })}
-                >
-                  <p className="font-medium">{action.label}</p>
-                  <p className="mt-2 text-sm text-slate-600 dark:text-slate-300">{action.description}</p>
-                </button>
-              ))}
-            </div>
-          </Card>
-        </div>
-      </div>
-
-      <div className="grid gap-6 xl:grid-cols-[1fr_1fr_0.9fr]">
-        <Card>
-          <SectionHeader title="Project progress" description="Current stage completion across major delivery lanes." />
-          <BarChart
-            items={[
-              { label: "Product scope", value: 78 },
-              { label: "Engineering execution", value: 66, tone: "mint" },
-              { label: "Operations readiness", value: 57, tone: "amber" },
-            ]}
+          <SectionHeader
+            title="Upcoming deadlines"
+            description="Next open tasks, ordered by due date."
           />
+          {due.length ? (
+            <TaskList tasks={due} />
+          ) : (
+            <p className="text-sm text-slate-500">No upcoming open tasks.</p>
+          )}
         </Card>
         <Card>
-          <SectionHeader title="Upcoming deadlines" />
-          <div className="space-y-4">
-            {tasks
-              .slice()
-              .sort((a, b) => a.dueDate.localeCompare(b.dueDate))
-              .slice(0, 4)
-              .map((task) => (
-                <div key={task.id} className="rounded-3xl border border-slate-200/70 p-4 dark:border-white/10">
-                  <p className="font-medium">{task.title}</p>
-                  <p className="mt-2 text-sm text-slate-600 dark:text-slate-300">Due {formatDate(task.dueDate)}</p>
-                </div>
-              ))}
+          <SectionHeader title="Project health" />
+          {store.projects.length ? (
+            <div className="space-y-5">
+              {store.projects
+                .filter((p) => p.status !== "Archived")
+                .slice(0, 5)
+                .map((p) => (
+                  <Link
+                    key={p.id}
+                    className="block space-y-2"
+                    to={"/app/projects/" + p.id}
+                  >
+                    <div className="flex flex-wrap justify-between gap-2">
+                      <span className="font-medium">{p.name}</span>
+                      <Badge>{p.status}</Badge>
+                    </div>
+                    <Progress
+                      value={p.progress}
+                      label={p.name + " completion"}
+                    />
+                  </Link>
+                ))}
+            </div>
+          ) : (
+            <p className="text-sm text-slate-500">
+              No projects yet. Owners can create the first one.
+            </p>
+          )}
+        </Card>
+      </div>
+      <div className="mt-6 grid gap-6 lg:grid-cols-2">
+        <Card>
+          <SectionHeader title="Quick actions" />
+          <div className="flex flex-wrap gap-3">
+            <Link to="/app/projects">
+              <Button asChild>
+                <FolderKanban className="h-4 w-4" />
+                Projects
+              </Button>
+            </Link>
+            <Link to="/app/calendar">
+              <Button asChild variant="secondary">
+                <CalendarDays className="h-4 w-4" />
+                Calendar
+              </Button>
+            </Link>
+            <Link to="/app/reports">
+              <Button asChild variant="secondary">
+                Reports
+              </Button>
+            </Link>
+            <Link to="/app/team">
+              <Button asChild variant="secondary">
+                Team
+              </Button>
+            </Link>
           </div>
         </Card>
         <Card>
           <SectionHeader title="Recent activity" />
-          <div className="space-y-4">
-            {notifications.map((notification) => (
-              <div key={notification.id} className="rounded-3xl border border-slate-200/70 p-4 dark:border-white/10">
-                <p className="font-medium">{notification.title}</p>
-                <p className="mt-2 text-sm text-slate-600 dark:text-slate-300">{notification.description}</p>
-                <p className="mt-3 text-xs uppercase tracking-[0.24em] text-slate-400">{notification.time}</p>
-              </div>
-            ))}
-          </div>
+          {store.audit.length ? (
+            <ul className="space-y-3">
+              {store.audit.slice(0, 5).map((item) => (
+                <li key={item.id} className="text-sm">
+                  <p>
+                    {item.action} · {item.actor}
+                  </p>
+                  <p className="mt-1 text-xs text-slate-500">
+                    {formatTime(item.time)}
+                  </p>
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <p className="text-sm text-slate-500">
+              Activity appears after changes are saved.
+            </p>
+          )}
         </Card>
       </div>
-    </div>
+    </>
   );
 }
-
 export function ProjectsPage() {
-  const { projects, archiveProject, deleteProject, createProject, members, pushToast } = useAppStore();
+  const store = useAppStore();
+  const action = useAction();
   const [search, setSearch] = useState("");
   const [status, setStatus] = useState("All");
   const [sort, setSort] = useState("Due date");
-  const [page, setPage] = useState(1);
-  const [open, setOpen] = useState(false);
-  const [form, setForm] = useState({ name: "", client: "", summary: "", dueDate: "2026-08-20", budget: "$25k" });
-
-  const filtered = useMemo(() => {
-    const result = projects.filter((project) => {
-      const matchesSearch = [project.name, project.client, project.summary].join(" ").toLowerCase().includes(search.toLowerCase());
-      const matchesStatus = status === "All" || project.status === status;
-      return matchesSearch && matchesStatus;
-    });
-
-    return result.sort((a, b) => {
-      if (sort === "Progress") return b.progress - a.progress;
-      if (sort === "Name") return a.name.localeCompare(b.name);
-      return a.dueDate.localeCompare(b.dueDate);
-    });
-  }, [projects, search, status, sort]);
-
-  const pageSize = 4;
-  const paged = filtered.slice((page - 1) * pageSize, page * pageSize);
-  const totalPages = Math.max(1, Math.ceil(filtered.length / pageSize));
-
+  const [create, setCreate] = useState(false);
+  const [deleting, setDeleting] = useState<string | null>(null);
+  const owner = store.currentUser?.role === "owner";
+  const filtered = store.projects
+    .filter(
+      (p) =>
+        (status === "All" || p.status === status) &&
+        (p.name + " " + p.client + " " + p.summary)
+          .toLowerCase()
+          .includes(search.toLowerCase()),
+    )
+    .sort((a, b) =>
+      sort === "Name"
+        ? a.name.localeCompare(b.name)
+        : sort === "Progress"
+          ? b.progress - a.progress
+          : a.dueDate.localeCompare(b.dueDate),
+    );
+  const pagination = usePagination(filtered, search + status + sort);
   return (
-    <div className="space-y-8">
+    <>
       <SectionHeader
-        eyebrow="Projects"
-        title="Manage portfolio-level workstreams"
-        description="Create, edit, archive, and remove project spaces with realistic governance controls."
+        eyebrow="Portfolio"
+        title="Projects"
+        description="Plan delivery, assign members and track task-derived progress."
         action={
-          <Button onClick={() => setOpen(true)}>
-            <Plus className="h-4 w-4" /> Create project
-          </Button>
+          owner ? (
+            <Button disabled={action.pending} onClick={() => setCreate(true)}>
+              <Plus className="h-4 w-4" />
+              New project
+            </Button>
+          ) : (
+            <Badge>Member access</Badge>
+          )
         }
       />
-      <Card>
-        <div className="grid gap-4 lg:grid-cols-[1fr_180px_180px]">
-          <SearchInput value={search} onChange={setSearch} placeholder="Search projects" />
-          <Select label="Status" options={["All", "Active", "At Risk", "Completed", "Archived"]} value={status} onChange={(event) => setStatus(event.target.value)} />
-          <Select label="Sort by" options={["Due date", "Progress", "Name"]} value={sort} onChange={(event) => setSort(event.target.value)} />
-        </div>
-      </Card>
-      <div className="grid gap-6 xl:grid-cols-2">
-        {paged.map((project) => (
-          <Card key={project.id}>
-            <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
-              <div>
-                <div className="flex flex-wrap items-center gap-3">
-                  <Link to={`/app/projects/${project.id}`} className="text-xl font-semibold hover:text-brand-600">
-                    {project.name}
-                  </Link>
-                  <Badge tone={project.status === "At Risk" ? "warning" : project.status === "Archived" ? "danger" : "success"}>{project.status}</Badge>
-                </div>
-                <p className="mt-2 text-sm text-slate-600 dark:text-slate-300">{project.summary}</p>
-                <div className="mt-4 flex flex-wrap gap-2">
-                  {project.tags.map((tag) => (
-                    <Badge key={tag}>{tag}</Badge>
-                  ))}
-                </div>
+      <div className="mb-6 grid gap-3 sm:grid-cols-3">
+        <SearchInput
+          value={search}
+          onChange={setSearch}
+          placeholder="Search projects"
+        />
+        <Select
+          aria-label="Project status"
+          options={["All", "Active", "At Risk", "Completed", "Archived"]}
+          value={status}
+          onChange={(e) => setStatus(e.target.value)}
+        />
+        <Select
+          aria-label="Sort projects"
+          options={["Due date", "Name", "Progress"]}
+          value={sort}
+          onChange={(e) => setSort(e.target.value)}
+        />
+      </div>
+      <ErrorNotice message={action.error} />
+      {filtered.length ? (
+        <div className="grid gap-5 md:grid-cols-2 xl:grid-cols-3">
+          {pagination.items.map((p) => (
+            <Card key={p.id}>
+              <div className="flex items-start justify-between gap-3">
+                <Badge
+                  tone={
+                    p.status === "Completed"
+                      ? "success"
+                      : p.status === "At Risk"
+                        ? "warning"
+                        : "default"
+                  }
+                >
+                  {p.status}
+                </Badge>
+                {owner && (
+                  <Button
+                    variant="ghost"
+                    aria-label={"Delete " + p.name}
+                    disabled={action.pending}
+                    onClick={() => setDeleting(p.id)}
+                  >
+                    <Trash2 className="h-4 w-4" />
+                  </Button>
+                )}
               </div>
-              <div className="text-sm text-slate-500 dark:text-slate-400">
-                <p>Due {formatDate(project.dueDate)}</p>
-                <p className="mt-2">Budget {project.budget}</p>
+              <Link
+                className="mt-4 block text-xl font-semibold"
+                to={"/app/projects/" + p.id}
+              >
+                {p.name}
+              </Link>
+              <p className="mt-2 line-clamp-2 text-sm text-slate-500 dark:text-slate-300">
+                {p.summary || "No summary yet."}
+              </p>
+              <div className="mt-5">
+                <Progress value={p.progress} />
               </div>
-            </div>
-            <div className="mt-5 h-2 rounded-full bg-slate-200 dark:bg-white/10">
-              <div className="h-full rounded-full bg-gradient-to-r from-brand-500 to-cyan-400" style={{ width: `${project.progress}%` }} />
-            </div>
-            <div className="mt-5 flex flex-wrap items-center justify-between gap-3">
-              <div className="flex -space-x-3">
-                {project.members.map((memberId) => {
-                  const member = members.find((item) => item.id === memberId);
-                  return member ? <Avatar key={member.id} name={member.name} status={member.status} /> : null;
-                })}
-              </div>
-              <div className="flex flex-wrap gap-2">
-                <Link to={`/app/projects/${project.id}`}>
-                  <Button variant="secondary">Open</Button>
+              <p className="mt-4 text-xs text-slate-500">
+                Due {formatDate(p.dueDate)} · {p.members.length} members
+              </p>
+              <div className="mt-5 flex flex-wrap gap-2">
+                <Link to={"/app/projects/" + p.id}>
+                  <Button asChild variant="secondary">
+                    Open project
+                  </Button>
                 </Link>
-                <Button
-                  variant="ghost"
-                  onClick={() => {
-                    archiveProject(project.id);
-                    pushToast({ title: "Project archived", description: `${project.name} was moved to archived.` });
-                  }}
-                >
-                  Archive
-                </Button>
-                <Button
-                  variant="danger"
-                  onClick={() => {
-                    deleteProject(project.id);
-                    pushToast({ title: "Project deleted", description: `${project.name} and related tasks were removed.` });
-                  }}
-                >
-                  Delete
-                </Button>
+                {owner && p.status !== "Archived" && (
+                  <Button
+                    variant="ghost"
+                    disabled={action.pending}
+                    onClick={() => {
+                      void action.run(
+                        () => store.archiveProject(p.id),
+                        "Project archived",
+                      );
+                    }}
+                  >
+                    Archive
+                  </Button>
+                )}
               </div>
-            </div>
-          </Card>
-        ))}
-      </div>
-      <div className="flex items-center justify-between">
-        <p className="text-sm text-slate-500 dark:text-slate-400">
-          Page {page} of {totalPages}
-        </p>
-        <div className="flex gap-3">
-          <Button variant="secondary" disabled={page === 1} onClick={() => setPage((current) => current - 1)}>
-            Previous
-          </Button>
-          <Button variant="secondary" disabled={page === totalPages} onClick={() => setPage((current) => current + 1)}>
-            Next
-          </Button>
+            </Card>
+          ))}
         </div>
-      </div>
-
-      <Modal open={open} onClose={() => setOpen(false)} title="Create new project" description="Provision a new workstream with realistic workspace metadata.">
-        <div className="grid gap-4 md:grid-cols-2">
-          <Input label="Project name" value={form.name} onChange={(event) => setForm((current) => ({ ...current, name: event.target.value }))} />
-          <Input label="Client" value={form.client} onChange={(event) => setForm((current) => ({ ...current, client: event.target.value }))} />
-          <div className="md:col-span-2">
-            <Input label="Summary" value={form.summary} onChange={(event) => setForm((current) => ({ ...current, summary: event.target.value }))} />
-          </div>
-          <Input label="Due date" type="date" value={form.dueDate} onChange={(event) => setForm((current) => ({ ...current, dueDate: event.target.value }))} />
-          <Input label="Budget" value={form.budget} onChange={(event) => setForm((current) => ({ ...current, budget: event.target.value }))} />
-        </div>
-        <div className="mt-6 flex justify-end gap-3">
-          <Button variant="ghost" onClick={() => setOpen(false)}>
-            Cancel
-          </Button>
-          <Button
-            onClick={() => {
-              if (!form.name || !form.client || !form.summary) return;
-              createProject({
-                name: form.name,
-                client: form.client,
-                summary: form.summary,
-                dueDate: form.dueDate,
-                budget: form.budget,
-                members: members.slice(0, 2).map((member) => member.id),
-                tags: ["New"],
-              });
-              pushToast({ title: "Project created", description: `${form.name} is now available in the workspace.` });
-              setOpen(false);
-            }}
-          >
-            Save project
-          </Button>
-        </div>
+      ) : (
+        <EmptyState
+          title="No projects found"
+          description={
+            search || status !== "All"
+              ? "Try a different search or filter."
+              : "Owners can create a project to start planning."
+          }
+        />
+      )}
+      <Pagination {...pagination} />
+      <Modal
+        open={create}
+        title="Create project"
+        onClose={() => setCreate(false)}
+      >
+        {create && <ProjectForm onSaved={() => setCreate(false)} />}
       </Modal>
-    </div>
+      <Modal
+        open={!!deleting}
+        title="Delete project?"
+        description="This also permanently deletes its tasks and comments."
+        onClose={() => setDeleting(null)}
+      >
+        <ErrorNotice message={action.error} />
+        <Button
+          variant="danger"
+          disabled={action.pending}
+          onClick={async () => {
+            if (!deleting) return;
+            const result = await action.run(
+              () => store.deleteProject(deleting),
+              "Project deleted",
+            );
+            if (result.ok) setDeleting(null);
+          }}
+        >
+          Delete project
+        </Button>
+      </Modal>
+    </>
   );
 }
-
 export function ProjectDetailsPage() {
   const { projectId } = useParams();
-  const { projects, tasks, members, updateProject, pushToast } = useAppStore();
+  return <ProjectDetails key={projectId} id={projectId ?? ""} />;
+}
+function ProjectDetails({ id }: { id: string }) {
+  const store = useAppStore();
+  const action = useAction();
+  const navigate = useNavigate();
   const [tab, setTab] = useState("Overview");
-  const project = projects.find((item) => item.id === projectId);
-
-  if (!project) return <EmptyState title="Project not found" description="The requested project does not exist anymore." />;
-
-  const projectTasks = tasks.filter((task) => task.projectId === project.id);
-
+  const [edit, setEdit] = useState(false);
+  const [add, setAdd] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+  const project = store.projects.find((p) => p.id === id);
+  if (!project)
+    return (
+      <EmptyState
+        title="Project not found"
+        description="It may have been removed, or belong to another workspace."
+        action={
+          <Link to="/app/projects">
+            <Button asChild>Back to projects</Button>
+          </Link>
+        }
+      />
+    );
+  const tasks = store.tasks.filter((t) => t.projectId === id);
+  const owner = store.currentUser?.role === "owner";
   return (
-    <div className="space-y-8">
-      <Breadcrumbs items={[{ label: "Projects", href: "/app/projects" }, { label: project.name }]} />
+    <>
+      <Breadcrumbs
+        items={[
+          { label: "Projects", href: "/app/projects" },
+          { label: project.name },
+        ]}
+      />
       <SectionHeader
         title={project.name}
         description={project.summary}
         action={
-          <Button
-            onClick={() => {
-              updateProject(project.id, { progress: Math.min(project.progress + 5, 100) });
-              pushToast({ title: "Progress updated", description: `${project.name} moved forward by 5%.` });
-            }}
-          >
-            Update progress
-          </Button>
+          <div className="flex flex-wrap gap-2">
+            {project.status !== "Archived" && (
+              <Button onClick={() => setAdd(true)}>Add task</Button>
+            )}
+            {owner && (
+              <>
+                <Button variant="secondary" onClick={() => setEdit(true)}>
+                  Edit project
+                </Button>
+                <Button variant="danger" onClick={() => setDeleting(true)}>
+                  Delete
+                </Button>
+              </>
+            )}
+          </div>
         }
       />
-      <div className="flex flex-wrap gap-3">
-        {["Overview", "Timeline", "Members", "Files", "Progress"].map((item) => (
-          <TabButton key={item} active={tab === item} onClick={() => setTab(item)}>
-            {item}
-          </TabButton>
-        ))}
+      <div className="grid gap-4 sm:grid-cols-3">
+        <Metric label="Status" value={project.status} />
+        <Metric label="Tasks" value={tasks.length} />
+        <Metric
+          label="Completion"
+          value={project.progress + "%"}
+          detail="Calculated from tasks"
+        />
       </div>
-      {tab === "Overview" && (
-        <div className="grid gap-6 xl:grid-cols-[1.2fr_0.8fr]">
-          <Card>
-            <SectionHeader title="Project overview" />
-            <div className="grid gap-6 md:grid-cols-2">
-              <div>
-                <p className="text-sm text-slate-500 dark:text-slate-400">Client</p>
-                <p className="mt-2 text-lg font-medium">{project.client}</p>
-              </div>
-              <div>
-                <p className="text-sm text-slate-500 dark:text-slate-400">Health</p>
-                <p className="mt-2 text-lg font-medium">{project.health}</p>
-              </div>
-              <div>
-                <p className="text-sm text-slate-500 dark:text-slate-400">Due date</p>
-                <p className="mt-2 text-lg font-medium">{formatDate(project.dueDate)}</p>
-              </div>
-              <div>
-                <p className="text-sm text-slate-500 dark:text-slate-400">Budget</p>
-                <p className="mt-2 text-lg font-medium">{project.budget}</p>
-              </div>
-            </div>
-          </Card>
-          <Card>
-            <SectionHeader title="Progress" />
-            <BarChart items={[{ label: "Delivery", value: project.progress }, { label: "Risk coverage", value: 72, tone: "mint" }, { label: "Stakeholder confidence", value: 81 }]} />
-          </Card>
-        </div>
-      )}
-      {tab === "Timeline" && (
-        <Card>
-          <SectionHeader title="Timeline" description="Major delivery checkpoints and deadlines." />
-          <div className="space-y-5">
-            {projectTasks.map((task) => (
-              <div key={task.id} className="flex gap-4">
-                <div className="mt-1 h-4 w-4 rounded-full bg-brand-500" />
-                <div className="rounded-3xl border border-slate-200/70 p-4 dark:border-white/10">
-                  <p className="font-medium">{task.title}</p>
-                  <p className="mt-2 text-sm text-slate-600 dark:text-slate-300">{formatDate(task.dueDate)}</p>
-                </div>
-              </div>
-            ))}
-          </div>
-        </Card>
-      )}
-      {tab === "Members" && (
-        <div className="grid gap-6 md:grid-cols-2 xl:grid-cols-3">
-          {project.members.map((memberId) => {
-            const member = members.find((item) => item.id === memberId);
-            return member ? (
-              <Card key={member.id}>
-                <div className="flex items-center gap-4">
-                  <Avatar name={member.name} status={member.status} />
+      <div className="my-6 flex flex-wrap gap-2">
+        {["Overview", "Timeline", "Members", "Files", "Progress"].map(
+          (name) => (
+            <TabButton
+              key={name}
+              active={tab === name}
+              onClick={() => setTab(name)}
+            >
+              {name}
+            </TabButton>
+          ),
+        )}
+      </div>
+      <Card>
+        {tab === "Overview" && (
+          <>
+            <dl className="mb-6 grid gap-5 sm:grid-cols-3">
+              <DetailsRow label="Due date">
+                {formatDate(project.dueDate)}
+              </DetailsRow>
+              <DetailsRow label="Client">{project.client || "None"}</DetailsRow>
+              <DetailsRow label="Budget note">
+                {project.budget || "None"}
+              </DetailsRow>
+            </dl>
+            {tasks.length ? (
+              <TaskList tasks={tasks} />
+            ) : (
+              <p className="text-sm text-slate-500">
+                No tasks in this project.
+              </p>
+            )}
+          </>
+        )}
+        {tab === "Timeline" && (
+          <>
+            <h3 className="mb-4 font-semibold">Task deadlines</h3>
+            {tasks.length ? (
+              <TaskList
+                tasks={[...tasks].sort((a, b) =>
+                  a.dueDate.localeCompare(b.dueDate),
+                )}
+              />
+            ) : (
+              <p>No task deadlines yet.</p>
+            )}
+          </>
+        )}
+        {tab === "Members" && (
+          <div className="grid gap-4 sm:grid-cols-2">
+            {store.members
+              .filter((m) => project.members.includes(m.id))
+              .map((m) => (
+                <div key={m.id} className="flex items-center gap-3">
+                  <Avatar name={m.name} />
                   <div>
-                    <p className="font-medium">{member.name}</p>
-                    <p className="text-sm text-slate-500 dark:text-slate-400">{member.role}</p>
+                    <p>{m.name}</p>
+                    <p className="text-sm text-slate-500">
+                      {m.role} · {m.team || "No team"}
+                    </p>
                   </div>
                 </div>
-                <div className="mt-4 text-sm text-slate-600 dark:text-slate-300">{member.email}</div>
-              </Card>
-            ) : null;
-          })}
+              ))}
+          </div>
+        )}
+        {tab === "Files" && (
+          <p className="text-sm text-slate-500 dark:text-slate-300">
+            File uploads are not configured in this installation. Add context in
+            task descriptions and comments.
+          </p>
+        )}
+        {tab === "Progress" && (
+          <div className="space-y-6">
+            <Progress value={project.progress} label="Project completion" />
+            <p className="text-sm text-slate-500">
+              Progress and completed status are calculated from task status and
+              subtasks.
+            </p>
+            {tasks.map((t) => (
+              <Link className="block" key={t.id} to={"/app/tasks/" + t.id}>
+                <Progress value={t.progress} label={t.title} />
+              </Link>
+            ))}
+          </div>
+        )}
+      </Card>
+      {owner && (
+        <div className="mt-5">
+          <p className="mb-3 text-sm text-slate-500">
+            Completed status is calculated from tasks. Reopen a task to reopen a
+            completed project.
+          </p>
+          <Select
+            label="Project status"
+            disabled={action.pending}
+            options={
+              project.status === "Completed"
+                ? ["Completed", "Archived"]
+                : ["Active", "At Risk", "Archived"]
+            }
+            value={project.status}
+            onChange={(e) => {
+              if (e.target.value !== "Completed")
+                void action.run(
+                  () =>
+                    store.updateProject(id, {
+                      status: e.target.value as
+                        "Active" | "At Risk" | "Archived",
+                    }),
+                  "Project status saved",
+                );
+            }}
+          />
+          <ErrorNotice message={action.error} />
         </div>
       )}
-      {tab === "Files" && (
-        <Card>
-          <SectionHeader title="Files" description="Attachments and working assets connected to this project." />
-          <div className="grid gap-4 md:grid-cols-3">
-            {["Launch-plan-v4.fig", "Migration-runbook.pdf", "Stakeholder-brief.docx"].map((file) => (
-              <button
-                key={file}
-                className="rounded-3xl border border-slate-200/70 p-4 text-left hover:border-brand-200 dark:border-white/10 dark:hover:border-brand-500/30"
-                onClick={() => pushToast({ title: "File opened", description: `${file} previewed in the workspace.` })}
-              >
-                <FolderOpenDot className="h-5 w-5 text-brand-500" />
-                <p className="mt-4 font-medium">{file}</p>
-              </button>
-            ))}
-          </div>
-        </Card>
-      )}
-      {tab === "Progress" && (
-        <Card>
-          <SectionHeader title="Progress detail" />
-          <div className="space-y-4">
-            {projectTasks.map((task) => (
-              <div key={task.id}>
-                <div className="mb-2 flex items-center justify-between text-sm">
-                  <span>{task.title}</span>
-                  <span>{task.progress}%</span>
-                </div>
-                <div className="h-2 rounded-full bg-slate-200 dark:bg-white/10">
-                  <div className="h-full rounded-full bg-gradient-to-r from-brand-500 to-cyan-400" style={{ width: `${task.progress}%` }} />
-                </div>
-              </div>
-            ))}
-          </div>
-        </Card>
-      )}
-    </div>
+      <Modal open={edit} title="Edit project" onClose={() => setEdit(false)}>
+        {edit && (
+          <ProjectForm project={project} onSaved={() => setEdit(false)} />
+        )}
+      </Modal>
+      <Modal open={add} title="Create task" onClose={() => setAdd(false)}>
+        {add && <TaskForm projectId={id} onSaved={() => setAdd(false)} />}
+      </Modal>
+      <Modal
+        open={deleting}
+        title="Delete project?"
+        description="Its tasks and comments will also be deleted."
+        onClose={() => setDeleting(false)}
+      >
+        <ErrorNotice message={action.error} />
+        <Button
+          variant="danger"
+          disabled={action.pending}
+          onClick={async () => {
+            const result = await action.run(
+              () => store.deleteProject(id),
+              "Project deleted",
+            );
+            if (result.ok) navigate("/app/projects");
+          }}
+        >
+          Confirm deletion
+        </Button>
+      </Modal>
+    </>
   );
 }
-
 export function KanbanPage() {
-  const { tasks, projects } = useAppStore();
-  const [projectFilter, setProjectFilter] = useState("All projects");
-  const [priorityFilter, setPriorityFilter] = useState("All priorities");
-  const [search, setSearch] = useState("");
-
-  const filtered = useMemo(
-    () =>
-      tasks.filter((task) => {
-        const project = projects.find((item) => item.id === task.projectId);
-        const matchesProject = projectFilter === "All projects" || project?.name === projectFilter;
-        const matchesPriority = priorityFilter === "All priorities" || task.priority === priorityFilter;
-        const matchesSearch = task.title.toLowerCase().includes(search.trim().toLowerCase());
-        return matchesProject && matchesPriority && matchesSearch;
-      }),
-    [tasks, projects, projectFilter, priorityFilter, search],
-  );
-
+  const store = useAppStore();
+  const [project, setProject] = useState("All");
   return (
-    <div className="space-y-8">
+    <>
       <SectionHeader
-        eyebrow="Kanban"
-        title="Drag a card to move it between columns"
-        description="Cards are draggable between all five columns. Arrow buttons on each card do the same thing from the keyboard, so the board works without a mouse."
+        eyebrow="Execution"
+        title="Kanban board"
+        description="Drag tasks between stages, or use their previous and next buttons."
+        action={
+          <Link to="/app/tasks">
+            <Button asChild>Create or edit tasks</Button>
+          </Link>
+        }
       />
-      <Card>
-        <div className="grid gap-4 lg:grid-cols-[1fr_220px_220px]">
-          <SearchInput value={search} onChange={setSearch} placeholder="Search board cards" />
-          <Select
-            label="Project"
-            options={["All projects", ...projects.map((project) => project.name)]}
-            value={projectFilter}
-            onChange={(event) => setProjectFilter(event.target.value)}
-          />
-          <Select
-            label="Priority"
-            options={["All priorities", "Critical", "High", "Medium", "Low"]}
-            value={priorityFilter}
-            onChange={(event) => setPriorityFilter(event.target.value)}
-          />
-        </div>
-      </Card>
-      {filtered.length === 0 ? (
+      <div className="mb-5 max-w-sm">
+        <Select
+          aria-label="Kanban project"
+          options={[
+            { value: "All", label: "All projects" },
+            ...store.projects.map((p) => ({ value: p.id, label: p.name })),
+          ]}
+          value={project}
+          onChange={(e) => setProject(e.target.value)}
+        />
+      </div>
+      {!store.tasks.length ? (
         <EmptyState
-          title="No cards match these filters"
-          description="Clear the search or widen the project and priority filters to see more of the board."
+          title="No tasks yet"
+          description="Create a project and task to fill your board."
         />
       ) : (
-        <KanbanBoard tasks={filtered} />
-      )}
-    </div>
-  );
-}
-
-export function CalendarPage() {
-  const { selectedDate, setSelectedDate, tasks } = useAppStore();
-  const days = Array.from({ length: 31 }, (_, index) => `2026-07-${String(index + 1).padStart(2, "0")}`);
-  const dayTasks = tasks.filter((task) => task.dueDate === selectedDate);
-
-  return (
-    <div className="space-y-8">
-      <SectionHeader eyebrow="Calendar" title="Interactive due-date calendar" description="Click any day to inspect due work, deadlines, and scheduling pressure." />
-      <div className="grid gap-6 xl:grid-cols-[1fr_0.9fr]">
-        <Card>
-          <div className="mb-6 flex items-center gap-3">
-            <CalendarRange className="h-5 w-5 text-brand-500" />
-            <h3 className="text-xl font-semibold">July 2026</h3>
-          </div>
-          <div className="grid grid-cols-7 gap-3 text-center text-xs uppercase tracking-[0.24em] text-slate-400">
-            {["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"].map((day) => (
-              <span key={day}>{day}</span>
-            ))}
-          </div>
-          <div className="mt-4 grid grid-cols-7 gap-3">
-            {days.map((date) => {
-              const count = tasks.filter((task) => task.dueDate === date).length;
-              const active = selectedDate === date;
-              return (
-                <button
-                  key={date}
-                  onClick={() => setSelectedDate(date)}
-                  className={cn(
-                    "rounded-3xl border px-3 py-4 text-left transition",
-                    active
-                      ? "border-brand-500 bg-brand-500 text-white"
-                      : "border-slate-200 bg-white hover:border-brand-200 dark:border-white/10 dark:bg-white/5 dark:hover:border-brand-500/30",
-                  )}
-                >
-                  <div className="text-sm font-medium">{date.slice(-2)}</div>
-                  <div className={cn("mt-4 text-xs", active ? "text-brand-100" : "text-slate-400")}>{count} tasks</div>
-                </button>
-              );
-            })}
-          </div>
-        </Card>
-        <Card>
-          <SectionHeader title={`Tasks due on ${formatDate(selectedDate)}`} />
-          {dayTasks.length ? (
-            <div className="space-y-4">
-              {dayTasks.map((task) => (
-                <Link key={task.id} to={`/app/tasks/${task.id}`} className="block rounded-3xl border border-slate-200/70 p-4 dark:border-white/10">
-                  <p className="font-medium">{task.title}</p>
-                  <p className="mt-2 text-sm text-slate-600 dark:text-slate-300">{task.description}</p>
-                  <div className="mt-3 flex gap-2">
-                    <Badge>{task.status}</Badge>
-                    <Badge tone={task.priority === "Critical" ? "danger" : "warning"}>{task.priority}</Badge>
-                  </div>
-                </Link>
-              ))}
-            </div>
-          ) : (
-            <EmptyState title="No deadlines here" description="Select another day or create work for this date." />
+        <KanbanBoard
+          tasks={store.tasks.filter(
+            (t) => project === "All" || t.projectId === project,
           )}
-        </Card>
-      </div>
-    </div>
+        />
+      )}
+    </>
   );
 }
-
+export function CalendarPage() {
+  const store = useAppStore();
+  const [month, setMonth] = useState(
+    () => new Date(new Date().getFullYear(), new Date().getMonth(), 1),
+  );
+  const year = month.getFullYear();
+  const index = month.getMonth();
+  const offset = new Date(year, index, 1).getDay();
+  const days = new Date(year, index + 1, 0).getDate();
+  const cells = Array.from(
+    { length: Math.ceil((offset + days) / 7) * 7 },
+    (_, i) => i - offset + 1,
+  );
+  const selected = store.tasks.filter((t) => t.dueDate === store.selectedDate);
+  return (
+    <>
+      <SectionHeader
+        eyebrow="Planning"
+        title="Calendar"
+        description="Tasks scheduled by their actual due date."
+        action={
+          <div className="flex flex-wrap gap-2">
+            <Button
+              variant="secondary"
+              aria-label="Previous month"
+              onClick={() => setMonth(new Date(year, index - 1, 1))}
+            >
+              ←
+            </Button>
+            <Button
+              variant="secondary"
+              onClick={() => {
+                const today = new Date();
+                setMonth(new Date(today.getFullYear(), today.getMonth(), 1));
+                store.setSelectedDate(dateInput(today));
+              }}
+            >
+              Today
+            </Button>
+            <Button
+              variant="secondary"
+              aria-label="Next month"
+              onClick={() => setMonth(new Date(year, index + 1, 1))}
+            >
+              →
+            </Button>
+          </div>
+        }
+      />
+      <Card className="p-3 sm:p-6">
+        <h3 className="mb-5 text-xl font-semibold">
+          {month.toLocaleDateString("en", { month: "long", year: "numeric" })}
+        </h3>
+        <div className="grid grid-cols-7 gap-1 sm:gap-2">
+          {["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"].map((day) => (
+            <div
+              key={day}
+              className="pb-2 text-center text-xs font-medium text-slate-500"
+            >
+              {day}
+            </div>
+          ))}
+          {cells.map((day, i) => {
+            if (day < 1 || day > days)
+              return <div key={i} aria-hidden="true" />;
+            const date = dateInput(new Date(year, index, day));
+            const tasks = store.tasks.filter((t) => t.dueDate === date);
+            return (
+              <button
+                key={i}
+                type="button"
+                aria-label={formatDate(date) + ", " + tasks.length + " tasks"}
+                aria-pressed={date === store.selectedDate}
+                onClick={() => store.setSelectedDate(date)}
+                className={cn(
+                  "min-h-16 rounded-xl border p-1 text-left sm:min-h-24 sm:p-3",
+                  date === store.selectedDate
+                    ? "border-brand-500 bg-brand-50 dark:bg-brand-500/15"
+                    : "border-slate-200 hover:bg-slate-50 dark:border-white/10 dark:hover:bg-white/5",
+                )}
+              >
+                <span className="text-sm">{day}</span>
+                {tasks.length > 0 && (
+                  <>
+                    <span className="mt-1 block h-1.5 w-1.5 rounded-full bg-brand-500" />
+                    <span className="mt-1 hidden text-[10px] text-slate-500 sm:block">
+                      {tasks.length} tasks
+                    </span>
+                  </>
+                )}
+              </button>
+            );
+          })}
+        </div>
+      </Card>
+      <Card className="mt-6">
+        <SectionHeader
+          title={formatDate(store.selectedDate)}
+          description={selected.length + " tasks due"}
+        />
+        {selected.length ? (
+          <TaskList tasks={selected} />
+        ) : (
+          <p className="text-sm text-slate-500">No tasks due on this date.</p>
+        )}
+      </Card>
+    </>
+  );
+}
 export function TasksPage() {
-  const { tasks, projects, createTask, members, pushToast } = useAppStore();
+  const store = useAppStore();
   const [search, setSearch] = useState("");
   const [status, setStatus] = useState("All");
+  const [project, setProject] = useState("All");
   const [sort, setSort] = useState("Due date");
-  const [page, setPage] = useState(1);
-  const [open, setOpen] = useState(false);
-  const [form, setForm] = useState({
-    title: "",
-    projectName: projects[0]?.name ?? "",
-    description: "",
-    status: "Todo",
-    priority: "Medium",
-    dueDate: "2026-07-20",
-  });
-
-  const filtered = useMemo(() => {
-    const result = tasks.filter((task) => {
-      const projectName = projects.find((project) => project.id === task.projectId)?.name ?? "";
-      const matchesSearch = [task.title, task.description, projectName].join(" ").toLowerCase().includes(search.toLowerCase());
-      const matchesStatus = status === "All" || task.status === status;
-      return matchesSearch && matchesStatus;
-    });
-
-    return result.sort((a, b) => {
-      if (sort === "Priority") return b.priority.localeCompare(a.priority);
-      if (sort === "Progress") return b.progress - a.progress;
-      return a.dueDate.localeCompare(b.dueDate);
-    });
-  }, [tasks, projects, search, status, sort]);
-
-  const paged = filtered.slice((page - 1) * 5, page * 5);
-  const totalPages = Math.max(1, Math.ceil(filtered.length / 5));
-
+  const [create, setCreate] = useState(false);
+  const priorityWeight: Record<Priority, number> = {
+    Low: 1,
+    Medium: 2,
+    High: 3,
+    Critical: 4,
+  };
+  const filtered = store.tasks
+    .filter(
+      (t) =>
+        (status === "All" || t.status === status) &&
+        (project === "All" || t.projectId === project) &&
+        (t.title + " " + t.description + " " + t.labels.join(" "))
+          .toLowerCase()
+          .includes(search.toLowerCase()),
+    )
+    .sort((a, b) =>
+      sort === "Priority"
+        ? priorityWeight[b.priority] - priorityWeight[a.priority]
+        : sort === "Title"
+          ? a.title.localeCompare(b.title)
+          : a.dueDate.localeCompare(b.dueDate),
+    );
+  const pagination = usePagination(filtered, search + status + project + sort);
   return (
-    <div className="space-y-8">
+    <>
       <SectionHeader
-        eyebrow="Tasks"
-        title="Task list with filters, sorting, and pagination"
-        description="Every visible control works against live local state so the interface behaves like a real product."
+        eyebrow="Execution"
+        title="Tasks"
+        description="Manage priorities, assignees and deadlines."
         action={
-          <Button onClick={() => setOpen(true)}>
-            <Plus className="h-4 w-4" /> Create task
+          <Button
+            onClick={() => setCreate(true)}
+            disabled={!store.projects.some((p) => p.status !== "Archived")}
+          >
+            <Plus className="h-4 w-4" />
+            New task
           </Button>
         }
       />
-      <Card>
-        <div className="grid gap-4 lg:grid-cols-[1fr_180px_180px]">
-          <SearchInput value={search} onChange={setSearch} placeholder="Search tasks" />
-          <Select label="Status" options={["All", "Backlog", "Todo", "In Progress", "Review", "Completed"]} value={status} onChange={(event) => setStatus(event.target.value)} />
-          <Select label="Sort by" options={["Due date", "Priority", "Progress"]} value={sort} onChange={(event) => setSort(event.target.value)} />
-        </div>
-      </Card>
-      <Card className="overflow-hidden p-0">
-        <div className="hidden grid-cols-[1.4fr_1fr_0.8fr_0.8fr_0.7fr] gap-4 border-b border-slate-200/70 px-6 py-4 text-sm font-medium text-slate-500 dark:border-white/10 dark:text-slate-400 md:grid">
-          <span>Task</span>
-          <span>Project</span>
-          <span>Status</span>
-          <span>Priority</span>
-          <span>Due</span>
-        </div>
-        <div>
-          {paged.map((task) => {
-            const project = projects.find((item) => item.id === task.projectId);
-            return (
-              <Link
-                key={task.id}
-                to={`/app/tasks/${task.id}`}
-                className="grid gap-3 border-b border-slate-200/70 px-6 py-4 transition hover:bg-slate-50 dark:border-white/10 dark:hover:bg-white/5 md:grid-cols-[1.4fr_1fr_0.8fr_0.8fr_0.7fr]"
-              >
-                <div>
-                  <p className="font-medium">{task.title}</p>
-                  <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">{task.description}</p>
-                </div>
-                <span className="text-sm text-slate-600 dark:text-slate-300">{project?.name}</span>
-                <span><Badge>{task.status}</Badge></span>
-                <span><Badge tone={task.priority === "Critical" ? "danger" : task.priority === "High" ? "warning" : "default"}>{task.priority}</Badge></span>
-                <span className="text-sm text-slate-600 dark:text-slate-300">{formatShortDate(task.dueDate)}</span>
-              </Link>
-            );
-          })}
-        </div>
-      </Card>
-      <div className="flex items-center justify-between">
-        <p className="text-sm text-slate-500 dark:text-slate-400">
-          Page {page} of {totalPages}
-        </p>
-        <div className="flex gap-3">
-          <Button variant="secondary" disabled={page === 1} onClick={() => setPage((current) => current - 1)}>
-            Previous
-          </Button>
-          <Button variant="secondary" disabled={page === totalPages} onClick={() => setPage((current) => current + 1)}>
-            Next
-          </Button>
-        </div>
+      <div className="mb-6 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+        <SearchInput
+          value={search}
+          onChange={setSearch}
+          placeholder="Search tasks"
+        />
+        <Select
+          aria-label="Task status filter"
+          options={["All", ...statuses]}
+          value={status}
+          onChange={(e) => setStatus(e.target.value)}
+        />
+        <Select
+          aria-label="Task project filter"
+          options={[
+            { value: "All", label: "All projects" },
+            ...store.projects.map((p) => ({ value: p.id, label: p.name })),
+          ]}
+          value={project}
+          onChange={(e) => setProject(e.target.value)}
+        />
+        <Select
+          aria-label="Sort tasks"
+          options={["Due date", "Priority", "Title"]}
+          value={sort}
+          onChange={(e) => setSort(e.target.value)}
+        />
       </div>
-
-      <Modal open={open} onClose={() => setOpen(false)} title="Create task" description="Add a real task card to the workspace.">
-        <div className="grid gap-4 md:grid-cols-2">
-          <Input label="Task title" value={form.title} onChange={(event) => setForm((current) => ({ ...current, title: event.target.value }))} />
-          <Select label="Project" options={projects.map((project) => project.name)} value={form.projectName} onChange={(event) => setForm((current) => ({ ...current, projectName: event.target.value }))} />
-          <div className="md:col-span-2">
-            <Input label="Description" value={form.description} onChange={(event) => setForm((current) => ({ ...current, description: event.target.value }))} />
-          </div>
-          <Select label="Status" options={["Backlog", "Todo", "In Progress", "Review", "Completed"]} value={form.status} onChange={(event) => setForm((current) => ({ ...current, status: event.target.value }))} />
-          <Select label="Priority" options={["Low", "Medium", "High", "Critical"]} value={form.priority} onChange={(event) => setForm((current) => ({ ...current, priority: event.target.value }))} />
-          <Input label="Due date" type="date" value={form.dueDate} onChange={(event) => setForm((current) => ({ ...current, dueDate: event.target.value }))} />
-        </div>
-        <div className="mt-6 flex justify-end gap-3">
-          <Button variant="ghost" onClick={() => setOpen(false)}>
-            Cancel
-          </Button>
-          <Button
-            onClick={() => {
-              const project = projects.find((item) => item.name === form.projectName);
-              if (!project || !form.title || !form.description) return;
-              createTask({
-                title: form.title,
-                projectId: project.id,
-                description: form.description,
-                status: form.status as never,
-                priority: form.priority as never,
-                dueDate: form.dueDate,
-                assigneeId: members[0].id,
-                labels: ["New"],
-                subtasks: [{ id: "new-subtask", label: "Kickoff", done: false }],
-              });
-              pushToast({ title: "Task created", description: `${form.title} was added to ${project.name}.` });
-              setOpen(false);
-            }}
-          >
-            Save task
-          </Button>
-        </div>
+      {filtered.length ? (
+        <Card>
+          <TaskList tasks={pagination.items} />
+        </Card>
+      ) : (
+        <EmptyState
+          title="No tasks found"
+          description="Adjust your filters, or add a task to an active project."
+        />
+      )}
+      <Pagination {...pagination} />
+      <Modal open={create} title="Create task" onClose={() => setCreate(false)}>
+        {create && <TaskForm onSaved={() => setCreate(false)} />}
       </Modal>
-    </div>
+    </>
   );
 }
-
 export function TaskDetailsPage() {
   const { taskId } = useParams();
-  const { tasks, projects, members, updateTask, toggleSubtask, pushToast } = useAppStore();
-  const task = tasks.find((item) => item.id === taskId);
+  return <TaskDetails key={taskId} id={taskId ?? ""} />;
+}
+function TaskDetails({ id }: { id: string }) {
+  const store = useAppStore();
+  const action = useAction();
   const navigate = useNavigate();
-
+  const [edit, setEdit] = useState(false);
+  const [deleting, setDeleting] = useState(false);
   const [comment, setComment] = useState("");
-
-  if (!task) return <EmptyState title="Task not found" description="The task may have been deleted or moved." action={<Button onClick={() => navigate("/app/tasks")}>Back to tasks</Button>} />;
-
-  const project = projects.find((item) => item.id === task.projectId);
-  const assignee = members.find((item) => item.id === task.assigneeId);
-
+  const task = store.tasks.find((t) => t.id === id);
+  if (!task)
+    return (
+      <EmptyState
+        title="Task not found"
+        description="It may have been deleted or belong to another workspace."
+        action={
+          <Link to="/app/tasks">
+            <Button asChild>Back to tasks</Button>
+          </Link>
+        }
+      />
+    );
+  const project = store.projects.find((p) => p.id === task.projectId);
+  const assignee = store.members.find((m) => m.id === task.assigneeId);
   return (
-    <div className="space-y-8">
-      <Breadcrumbs items={[{ label: "Tasks", href: "/app/tasks" }, { label: task.title }]} />
+    <>
+      <Breadcrumbs
+        items={[{ label: "Tasks", href: "/app/tasks" }, { label: task.title }]}
+      />
       <SectionHeader
         title={task.title}
-        description={task.description}
+        description={project?.name ?? "Project"}
         action={
-          <Button
-            onClick={() => {
-              updateTask(task.id, { status: task.status === "Completed" ? "Review" : "Completed", progress: task.status === "Completed" ? 92 : 100 });
-              pushToast({ title: "Task updated", description: `${task.title} status changed.` });
-            }}
-          >
-            Toggle completion
-          </Button>
-        }
-      />
-      <div className="grid gap-6 xl:grid-cols-[1fr_0.8fr]">
-        <Card>
-          <SectionHeader title="Task details" />
-          <div className="grid gap-4 md:grid-cols-2">
-            <Select
-              label="Status"
-              options={["Backlog", "Todo", "In Progress", "Review", "Completed"]}
-              value={task.status}
-              onChange={(event) => updateTask(task.id, { status: event.target.value as never })}
-            />
-            <Select
-              label="Priority"
-              options={["Low", "Medium", "High", "Critical"]}
-              value={task.priority}
-              onChange={(event) => updateTask(task.id, { priority: event.target.value as never })}
-            />
-            <Input label="Due date" type="date" value={task.dueDate} onChange={(event) => updateTask(task.id, { dueDate: event.target.value })} />
-            <Input label="Project" value={project?.name ?? ""} disabled />
-          </div>
-          <div className="mt-6">
-            <p className="text-sm font-medium text-slate-700 dark:text-slate-200">Subtasks</p>
-            <div className="mt-4 space-y-3">
-              {task.subtasks.map((subtask) => (
-                <label key={subtask.id} className="flex items-center gap-3 rounded-3xl border border-slate-200/70 p-4 dark:border-white/10">
-                  <input type="checkbox" checked={subtask.done} onChange={() => toggleSubtask(task.id, subtask.id)} />
-                  <span className={subtask.done ? "line-through text-slate-400" : ""}>{subtask.label}</span>
-                </label>
-              ))}
-            </div>
-          </div>
-          <div className="mt-6">
-            <p className="text-sm font-medium text-slate-700 dark:text-slate-200">Comments</p>
-            <div className="mt-4 flex gap-3">
-              <Input value={comment} onChange={(event) => setComment(event.target.value)} placeholder="Add a new comment" />
-              <Button
-                onClick={() => {
-                  if (!comment) return;
-                  pushToast({ title: "Comment added", description: comment });
-                  setComment("");
-                }}
-              >
-                Post
-              </Button>
-            </div>
-          </div>
-        </Card>
-        <div className="grid gap-6">
-          <Card>
-            <SectionHeader title="Assignee" />
-            {assignee && (
-              <div className="flex items-center gap-4">
-                <Avatar name={assignee.name} status={assignee.status} />
-                <div>
-                  <p className="font-medium">{assignee.name}</p>
-                  <p className="text-sm text-slate-500 dark:text-slate-400">{assignee.role}</p>
-                </div>
-              </div>
-            )}
-          </Card>
-          <Card>
-            <SectionHeader title="Attachments UI" />
-            <div className="space-y-3">
-              {["Specification.pdf", "Board-context.png", "Decision-log.docx"].map((file) => (
-                <button key={file} className="flex w-full items-center justify-between rounded-3xl border border-slate-200/70 p-4 dark:border-white/10" onClick={() => pushToast({ title: "Attachment opened", description: file })}>
-                  <span>{file}</span>
-                  <Download className="h-4 w-4 text-slate-400" />
-                </button>
-              ))}
-            </div>
-          </Card>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-export function TeamMembersPage() {
-  const { members, pushToast } = useAppStore();
-  const [search, setSearch] = useState("");
-  const [role, setRole] = useState("All");
-  const filtered = members.filter((member) => {
-    const matchesSearch = [member.name, member.role, member.team].join(" ").toLowerCase().includes(search.toLowerCase());
-    const matchesRole = role === "All" || member.team === role;
-    return matchesSearch && matchesRole;
-  });
-
-  return (
-    <div className="space-y-8">
-      <SectionHeader eyebrow="Team" title="Profiles, roles, permissions, and performance" description="A realistic people-management surface with working filters and status signals." />
-      <Card>
-        <div className="grid gap-4 lg:grid-cols-[1fr_220px]">
-          <SearchInput value={search} onChange={setSearch} placeholder="Search team members" />
-          <Select label="Team" options={["All", "Product", "Engineering", "Design", "Operations"]} value={role} onChange={(event) => setRole(event.target.value)} />
-        </div>
-      </Card>
-      <div className="grid gap-6 md:grid-cols-2 xl:grid-cols-3">
-        {filtered.map((member) => (
-          <Card key={member.id}>
-            <div className="flex items-center gap-4">
-              <Avatar name={member.name} status={member.status} />
-              <div>
-                <p className="font-medium">{member.name}</p>
-                <p className="text-sm text-slate-500 dark:text-slate-400">{member.role}</p>
-              </div>
-            </div>
-            <div className="mt-5 grid gap-4 text-sm">
-              <div className="flex items-center justify-between">
-                <span>Completed tasks</span>
-                <span className="font-medium">{member.completedTasks}</span>
-              </div>
-              <div className="flex items-center justify-between">
-                <span>Utilization</span>
-                <span className="font-medium">{member.utilization}%</span>
-              </div>
-              <div>
-                <p className="mb-3 font-medium">Permissions</p>
-                <div className="space-y-2">
-                  {member.permissions.map((permission) => (
-                    <div key={permission} className="rounded-2xl bg-slate-50 px-3 py-2 dark:bg-white/5">
-                      {permission}
-                    </div>
-                  ))}
-                </div>
-              </div>
-            </div>
-            <Button className="mt-5 w-full" variant="secondary" onClick={() => pushToast({ title: "Member profile", description: `${member.name} profile reviewed.` })}>
-              Open profile
+          <div className="flex flex-wrap gap-2">
+            <Button variant="secondary" onClick={() => setEdit(true)}>
+              Edit task
             </Button>
-          </Card>
-        ))}
-      </div>
-    </div>
-  );
-}
-
-export function MessagesPage() {
-  const { messageThreads, members, addMessage } = useAppStore();
-  const [activeThreadId, setActiveThreadId] = useState(messageThreads[0]?.id ?? "");
-  const [message, setMessage] = useState("");
-  const thread = messageThreads.find((item) => item.id === activeThreadId) ?? messageThreads[0];
-
-  if (!thread) return <EmptyState title="No conversations yet" description="Start a message thread to coordinate work." />;
-
-  return (
-    <div className="grid gap-6 xl:grid-cols-[340px_1fr]">
-      <Card>
-        <SectionHeader title="Messages" description="Team conversations connected to execution." />
-        <div className="space-y-3">
-          {messageThreads.map((item) => (
-            <button
-              key={item.id}
-              onClick={() => setActiveThreadId(item.id)}
-              className={cn(
-                "w-full rounded-3xl border p-4 text-left transition",
-                activeThreadId === item.id
-                  ? "border-brand-500 bg-brand-50 dark:border-brand-500/40 dark:bg-brand-500/10"
-                  : "border-slate-200/70 dark:border-white/10",
-              )}
-            >
-              <div className="flex items-center justify-between">
-                <p className="font-medium">{item.title}</p>
-                {item.unread > 0 && <Badge tone="warning">{item.unread}</Badge>}
-              </div>
-              <p className="mt-2 text-sm text-slate-600 dark:text-slate-300">{item.lastMessage}</p>
-            </button>
-          ))}
-        </div>
-      </Card>
-      <Card>
-        <SectionHeader title={thread.title} description="Message history" />
-        <div className="space-y-4">
-          {thread.messages.map((entry) => {
-            const author = members.find((member) => member.id === entry.authorId);
-            return (
-              <div key={entry.id} className="rounded-3xl border border-slate-200/70 p-4 dark:border-white/10">
-                <div className="flex items-center gap-3">
-                  {author && <Avatar name={author.name} status={author.status} />}
-                  <div>
-                    <p className="font-medium">{author?.name}</p>
-                    <p className="text-xs uppercase tracking-[0.24em] text-slate-400">{entry.time}</p>
-                  </div>
-                </div>
-                <p className="mt-3 text-sm text-slate-600 dark:text-slate-300">{entry.content}</p>
-              </div>
-            );
-          })}
-        </div>
-        <div className="mt-6 flex gap-3">
-          <Input value={message} onChange={(event) => setMessage(event.target.value)} placeholder="Write a message" icon={<Search className="h-4 w-4 opacity-0" />} />
-          <Button
-            onClick={() => {
-              if (!message) return;
-              addMessage(thread.id, members[0].id, message);
-              setMessage("");
-            }}
-          >
-            <Send className="h-4 w-4" /> Send
-          </Button>
-        </div>
-      </Card>
-    </div>
-  );
-}
-
-export function NotificationsPage() {
-  const { notifications, markNotificationRead, markAllNotificationsRead } = useAppStore();
-  const [filter, setFilter] = useState("All");
-  const filtered = notifications.filter((item) => filter === "All" || item.category === filter);
-
-  return (
-    <div className="space-y-8">
-      <SectionHeader
-        eyebrow="Notifications"
-        title="Inbox for tasks, team updates, and system signals"
-        action={<Button onClick={markAllNotificationsRead}>Mark all as read</Button>}
-      />
-      <div className="flex flex-wrap gap-3">
-        {["All", "System", "Tasks", "Team"].map((item) => (
-          <TabButton key={item} active={filter === item} onClick={() => setFilter(item)}>
-            {item}
-          </TabButton>
-        ))}
-      </div>
-      <div className="space-y-4">
-        {filtered.map((notification) => (
-          <Card key={notification.id} className={!notification.read ? "border-brand-200 dark:border-brand-500/30" : ""}>
-            <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
-              <div>
-                <div className="flex items-center gap-3">
-                  <p className="font-medium">{notification.title}</p>
-                  {!notification.read && <Badge tone="warning">New</Badge>}
-                </div>
-                <p className="mt-2 text-sm text-slate-600 dark:text-slate-300">{notification.description}</p>
-                <p className="mt-3 text-xs uppercase tracking-[0.24em] text-slate-400">{notification.time}</p>
-              </div>
-              <Button variant="secondary" onClick={() => markNotificationRead(notification.id)}>
-                Mark as read
-              </Button>
-            </div>
-          </Card>
-        ))}
-      </div>
-    </div>
-  );
-}
-
-export function ReportsPage() {
-  const { pushToast } = useAppStore();
-  const [tab, setTab] = useState("Weekly");
-  const reportItems = tab === "Weekly"
-    ? [
-        { label: "Completed tasks", value: 84, tone: "mint" as const },
-        { label: "Pending tasks", value: 42, tone: "amber" as const },
-        { label: "On-time delivery", value: 88, tone: "brand" as const },
-      ]
-    : [
-        { label: "Completed tasks", value: 91, tone: "mint" as const },
-        { label: "Pending tasks", value: 36, tone: "amber" as const },
-        { label: "Project progress", value: 76, tone: "brand" as const },
-      ];
-
-  return (
-    <div className="space-y-8">
-      <SectionHeader eyebrow="Reports" title="Executive-ready weekly and monthly reporting" description="Tabs, exports, and delivery health summaries all behave like a commercial SaaS reporting surface." />
-      <div className="flex flex-wrap gap-3">
-        {["Weekly", "Monthly"].map((item) => (
-          <TabButton key={item} active={tab === item} onClick={() => setTab(item)}>
-            {item}
-          </TabButton>
-        ))}
-      </div>
-      <div className="grid gap-6 xl:grid-cols-[1fr_0.8fr]">
-        <Card>
-          <SectionHeader title={`${tab} report`} action={<Button onClick={() => pushToast({ title: "Report exported", description: `${tab} report downloaded as PDF.` })}><Download className="h-4 w-4" /> Export</Button>} />
-          <BarChart items={reportItems} />
-        </Card>
-        <Card>
-          <SectionHeader title="Narrative summary" />
-          <p className="text-sm leading-7 text-slate-600 dark:text-slate-300">
-            Delivery remained strong this {tab.toLowerCase()}, with completed work trending above target and risk concentrated in a small number of migration tasks. Stakeholder confidence remains high and reporting latency has continued to decline.
-          </p>
-        </Card>
-      </div>
-    </div>
-  );
-}
-
-export function AnalyticsPage() {
-  return (
-    <div className="space-y-8">
-      <SectionHeader eyebrow="Analytics" title="Professional charts for productivity and workload" description="Visual reporting for completed tasks, pending work, delivery confidence, and team capacity." />
-      <div className="grid gap-6 xl:grid-cols-3">
-        <DonutStat value={79} label="Completed tasks" description="Completed work as a share of total active scope." />
-        <DonutStat value={61} label="Productivity" description="Execution score blended from throughput and due-date adherence." />
-        <DonutStat value={72} label="Team workload" description="Average team capacity utilization across departments." />
-      </div>
-      <div className="grid gap-6 xl:grid-cols-2">
-        <Card>
-          <SectionHeader title="Weekly report" />
-          <BarChart items={[{ label: "Completed", value: 82, tone: "mint" }, { label: "Pending", value: 44, tone: "amber" }, { label: "Project progress", value: 73 }]} />
-        </Card>
-        <Card>
-          <SectionHeader title="Monthly report" />
-          <BarChart items={[{ label: "Completed", value: 89, tone: "mint" }, { label: "Pending", value: 31, tone: "amber" }, { label: "Workload balance", value: 76 }]} />
-        </Card>
-      </div>
-    </div>
-  );
-}
-
-export function SettingsPage() {
-  const { settings, updateSettings, pushToast } = useAppStore();
-  const [tab, setTab] = useState("Appearance");
-
-  return (
-    <div className="space-y-8">
-      <SectionHeader eyebrow="Settings" title="Workspace, notifications, appearance, and security" description="Every settings control updates local application state immediately." />
-      <div className="flex flex-wrap gap-3">
-        {["Profile", "Appearance", "Notifications", "Security", "Workspace"].map((item) => (
-          <TabButton key={item} active={tab === item} onClick={() => setTab(item)}>
-            {item}
-          </TabButton>
-        ))}
-      </div>
-      {tab === "Profile" && (
-        <Card>
-          <SectionHeader title="Profile preferences" />
-          <div className="grid gap-4 md:grid-cols-2">
-            <Input label="Display name" defaultValue="Maya Chen" />
-            <Input label="Email" defaultValue="maya@northstarlabs.co" />
-            <Select label="Language" options={["English", "German", "French"]} value={settings.language} onChange={(event) => updateSettings({ language: event.target.value })} />
-            <Input label="Timezone" value={settings.timezone} onChange={(event) => updateSettings({ timezone: event.target.value })} />
-          </div>
-        </Card>
-      )}
-      {tab === "Appearance" && (
-        <Card>
-          <SectionHeader title="Appearance" />
-          <div className="flex items-center justify-between rounded-3xl border border-slate-200/70 p-5 dark:border-white/10">
-            <div>
-              <p className="font-medium">Dark mode</p>
-              <p className="mt-2 text-sm text-slate-600 dark:text-slate-300">Switch between light and dark workspace themes.</p>
-            </div>
-            <Switch checked={settings.appearance === "dark"} onChange={(value) => updateSettings({ appearance: value ? "dark" : "light" })} />
-          </div>
-        </Card>
-      )}
-      {tab === "Notifications" && (
-        <Card>
-          <SectionHeader title="Notification preferences" />
-          <div className="space-y-4">
-            {[
-              { key: "emailNotifications", label: "Email notifications", value: settings.emailNotifications },
-              { key: "pushNotifications", label: "Push notifications", value: settings.pushNotifications },
-              { key: "weeklyDigest", label: "Weekly digest", value: settings.weeklyDigest },
-            ].map((item) => (
-              <div key={item.key} className="flex items-center justify-between rounded-3xl border border-slate-200/70 p-5 dark:border-white/10">
-                <span>{item.label}</span>
-                <Switch checked={item.value} onChange={(value) => updateSettings({ [item.key]: value } as never)} />
-              </div>
-            ))}
-          </div>
-        </Card>
-      )}
-      {tab === "Security" && (
-        <Card>
-          <SectionHeader title="Security" />
-          <div className="flex items-center justify-between rounded-3xl border border-slate-200/70 p-5 dark:border-white/10">
-            <div>
-              <p className="font-medium">Two-factor authentication</p>
-              <p className="mt-2 text-sm text-slate-600 dark:text-slate-300">Add an extra verification layer to the workspace.</p>
-            </div>
-            <Switch checked={settings.twoFactorAuth} onChange={(value) => updateSettings({ twoFactorAuth: value })} />
-          </div>
-        </Card>
-      )}
-      {tab === "Workspace" && (
-        <Card>
-          <SectionHeader title="Workspace settings" />
-          <div className="grid gap-4 md:grid-cols-2">
-            <Input label="Workspace name" defaultValue="Northstar Labs" />
-            <Input label="Default domain" defaultValue="northstarlabs.co" />
-          </div>
-          <Button className="mt-6" onClick={() => pushToast({ title: "Workspace updated", description: "Workspace settings were saved." })}>
-            Save workspace settings
-          </Button>
-        </Card>
-      )}
-    </div>
-  );
-}
-
-export function ProfilePage() {
-  return (
-    <div className="space-y-8">
-      <SectionHeader eyebrow="Profile" title="Workspace admin profile" description="Professional profile card with activity and productivity context." />
-      <div className="grid gap-6 xl:grid-cols-[0.8fr_1.2fr]">
-        <Card>
-          <div className="flex items-center gap-4">
-            <Avatar name="Maya Chen" status="Online" />
-            <div>
-              <p className="text-xl font-semibold">Maya Chen</p>
-              <p className="text-sm text-slate-500 dark:text-slate-400">Workspace Admin</p>
-            </div>
-          </div>
-          <div className="mt-6 space-y-3 text-sm text-slate-600 dark:text-slate-300">
-            <p>Email: maya@northstarlabs.co</p>
-            <p>Team: Strategy & Operations</p>
-            <p>Timezone: UTC+05:00</p>
-          </div>
-        </Card>
-        <Card>
-          <SectionHeader title="Recent profile activity" />
-          <BarChart items={[{ label: "Tasks managed", value: 74 }, { label: "Approvals completed", value: 68, tone: "mint" }, { label: "Reports shared", value: 52, tone: "amber" }]} />
-        </Card>
-      </div>
-    </div>
-  );
-}
-
-export function HelpCenterPage() {
-  const [search, setSearch] = useState("");
-  const [selectedArticle, setSelectedArticle] = useState<string | null>(null);
-  const { pushToast } = useAppStore();
-  const articles = [
-    "How to create and archive projects",
-    "Managing team permissions and roles",
-    "Using the calendar for due-date planning",
-    "Interpreting workload analytics",
-    "Exporting weekly and monthly reports",
-  ].filter((article) => article.toLowerCase().includes(search.toLowerCase()));
-
-  return (
-    <div className="space-y-8">
-      <SectionHeader eyebrow="Help Center" title="Support content for real product adoption" description="Searchable guidance, operational questions, and support actions." />
-      <Card>
-        <SearchInput value={search} onChange={setSearch} placeholder="Search help articles" />
-      </Card>
-      <div className="grid gap-6 xl:grid-cols-[1fr_0.8fr]">
-        <Card>
-          <SectionHeader title="Articles" />
-          <div className="space-y-3">
-            {articles.map((article) => (
-              <button
-                key={article}
-                onClick={() => setSelectedArticle(article)}
-                className="flex w-full items-center justify-between rounded-3xl border border-slate-200/70 p-4 text-left transition hover:border-brand-200 dark:border-white/10 dark:hover:border-brand-500/30"
-              >
-                <span>{article}</span>
-                <Filter className="h-4 w-4 text-slate-400" />
-              </button>
-            ))}
-          </div>
-        </Card>
-        <Card>
-          <SectionHeader title="Support options" />
-          <div className="space-y-4">
-            <button
-              onClick={() => pushToast({ title: "Live chat opened", description: "A support specialist joined your workspace queue." })}
-              className="w-full rounded-3xl border border-slate-200/70 p-4 text-left transition hover:border-brand-200 dark:border-white/10 dark:hover:border-brand-500/30"
-            >
-              Open live chat
-            </button>
-            <button
-              onClick={() => pushToast({ title: "Onboarding requested", description: "Customer success will schedule a guided onboarding session." })}
-              className="w-full rounded-3xl border border-slate-200/70 p-4 text-left transition hover:border-brand-200 dark:border-white/10 dark:hover:border-brand-500/30"
-            >
-              Request onboarding help
-            </button>
-            <button
-              onClick={() => pushToast({ title: "Support email drafted", description: "A new support email draft is ready with your workspace context." })}
-              className="w-full rounded-3xl border border-slate-200/70 p-4 text-left transition hover:border-brand-200 dark:border-white/10 dark:hover:border-brand-500/30"
-            >
-              Email product support
-            </button>
-          </div>
-        </Card>
-      </div>
-
-      <Modal
-        open={Boolean(selectedArticle)}
-        onClose={() => setSelectedArticle(null)}
-        title={selectedArticle ?? "Help article"}
-        description="Knowledge base article preview"
-      >
-        <div className="space-y-4 text-sm leading-7 text-slate-600 dark:text-slate-300">
-          <p>
-            This article explains the workflow, the expected operational outcome, and the most relevant workspace controls for{" "}
-            {selectedArticle?.toLowerCase()}.
-          </p>
-          <p>
-            The help center now behaves like a real product surface: article cards open a content preview and support actions create
-            visible outcomes instead of acting as dead UI.
-          </p>
-        </div>
-      </Modal>
-    </div>
-  );
-}
-
-export function NotFoundPage() {
-  return (
-    <div className="flex min-h-screen items-center justify-center bg-slate-100 px-4 dark:bg-ink-950">
-      <EmptyState
-        title="404 | Route not found"
-        description="The page you requested does not exist in this workspace. Return to the dashboard or the landing page."
-        action={
-          <div className="flex gap-3">
-            <Link to="/">
-              <Button variant="secondary">Landing page</Button>
-            </Link>
-            <Link to="/app/dashboard">
-              <Button>Dashboard</Button>
-            </Link>
+            <Button variant="danger" onClick={() => setDeleting(true)}>
+              Delete task
+            </Button>
           </div>
         }
       />
-    </div>
+      <div className="grid gap-6 xl:grid-cols-[1.6fr_1fr]">
+        <div className="space-y-6">
+          <Card>
+            <h3 className="font-semibold">Description</h3>
+            <p className="mt-3 whitespace-pre-wrap break-words text-sm text-slate-600 dark:text-slate-300">
+              {task.description || "No description."}
+            </p>
+            <div className="mt-5 flex flex-wrap gap-2">
+              {task.labels.map((label) => (
+                <Badge key={label}>{label}</Badge>
+              ))}
+            </div>
+          </Card>
+          <Card>
+            <h3 className="mb-4 font-semibold">Subtasks</h3>
+            {task.subtasks.length ? (
+              <div className="space-y-3">
+                {task.subtasks.map((subtask) => (
+                  <label
+                    className="flex items-start gap-3 text-sm"
+                    key={subtask.id}
+                  >
+                    <input
+                      type="checkbox"
+                      className="mt-1"
+                      checked={subtask.done}
+                      disabled={action.pending}
+                      onChange={() => {
+                        void action.run(
+                          () => store.toggleSubtask(id, subtask.id),
+                          "Subtask updated",
+                        );
+                      }}
+                    />
+                    <span
+                      className={
+                        subtask.done ? "text-slate-500 line-through" : ""
+                      }
+                    >
+                      {subtask.label}
+                    </span>
+                  </label>
+                ))}
+              </div>
+            ) : (
+              <p className="text-sm text-slate-500">
+                Use Edit task to add subtasks.
+              </p>
+            )}
+            <div className="mt-6">
+              <Progress value={task.progress} />
+            </div>
+          </Card>
+          <Card>
+            <h3 className="mb-4 font-semibold">Comments ({task.comments})</h3>
+            <div className="space-y-5">
+              {(store.comments[id] ?? []).map((item) => (
+                <div
+                  key={item.id}
+                  className="rounded-2xl bg-slate-50 p-4 dark:bg-white/5"
+                >
+                  <div className="flex flex-wrap justify-between gap-2 text-xs text-slate-500">
+                    <span>
+                      {store.members.find((m) => m.id === item.authorId)
+                        ?.name ?? "Workspace member"}
+                    </span>
+                    <time dateTime={item.time}>{formatTime(item.time)}</time>
+                  </div>
+                  <p className="mt-2 whitespace-pre-wrap break-words text-sm">
+                    {item.content}
+                  </p>
+                </div>
+              ))}
+            </div>
+            <form
+              className="mt-5 space-y-3"
+              onSubmit={async (e) => {
+                e.preventDefault();
+                const result = await action.run(
+                  () => store.addComment(id, comment.trim()),
+                  "Comment added",
+                );
+                if (result.ok) setComment("");
+              }}
+            >
+              <Textarea
+                label="Add a comment"
+                required
+                maxLength={5000}
+                value={comment}
+                onChange={(e) => setComment(e.target.value)}
+              />
+              <ErrorNotice message={action.error} />
+              <Button
+                type="submit"
+                disabled={action.pending || !comment.trim()}
+              >
+                Add comment
+              </Button>
+            </form>
+          </Card>
+        </div>
+        <div className="space-y-6">
+          <Card>
+            <dl className="space-y-5">
+              <DetailsRow label="Assignee">
+                {assignee?.name ?? "Unassigned"}
+              </DetailsRow>
+              <DetailsRow label="Due date">
+                {formatDate(task.dueDate)}
+              </DetailsRow>
+              <DetailsRow label="Project">
+                {project ? (
+                  <Link
+                    to={"/app/projects/" + project.id}
+                    className="text-brand-600 dark:text-brand-100"
+                  >
+                    {project.name}
+                  </Link>
+                ) : (
+                  "Unavailable"
+                )}
+              </DetailsRow>
+            </dl>
+            <div className="mt-6 space-y-4">
+              <Select
+                label="Status"
+                options={statuses}
+                value={task.status}
+                disabled={action.pending}
+                onChange={(e) => {
+                  void action.run(
+                    () => store.moveTask(id, e.target.value as TaskStatus),
+                    "Task status saved",
+                  );
+                }}
+              />
+              <Select
+                label="Priority"
+                options={priorities}
+                value={task.priority}
+                disabled={action.pending}
+                onChange={(e) => {
+                  void action.run(
+                    () =>
+                      store.updateTask(id, {
+                        priority: e.target.value as Priority,
+                      }),
+                    "Priority saved",
+                  );
+                }}
+              />
+            </div>
+          </Card>
+          <Card>
+            <h3 className="font-semibold">Files</h3>
+            <p className="mt-3 text-sm text-slate-500 dark:text-slate-300">
+              File uploads are not configured. Use the description and comments
+              to share task context.
+            </p>
+          </Card>
+          <ErrorNotice message={action.error} />
+        </div>
+      </div>
+      <Modal open={edit} title="Edit task" onClose={() => setEdit(false)}>
+        {edit && <TaskForm task={task} onSaved={() => setEdit(false)} />}
+      </Modal>
+      <Modal
+        open={deleting}
+        title="Delete task?"
+        description="This permanently removes the task and its comments."
+        onClose={() => setDeleting(false)}
+      >
+        <ErrorNotice message={action.error} />
+        <Button
+          variant="danger"
+          disabled={action.pending}
+          onClick={async () => {
+            const result = await action.run(
+              () => store.deleteTask(id),
+              "Task deleted",
+            );
+            if (result.ok) navigate("/app/tasks");
+          }}
+        >
+          Confirm deletion
+        </Button>
+      </Modal>
+    </>
   );
 }
