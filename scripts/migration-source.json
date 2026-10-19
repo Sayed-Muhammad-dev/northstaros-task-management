@@ -1,0 +1,44 @@
+{
+  "source": ".app-data/northstar.sqlite",
+  "primaryKeys": {
+    "memberships": [
+      "workspace_id",
+      "user_id"
+    ],
+    "workspace_state": [
+      "workspace_id"
+    ],
+    "users": [
+      "id"
+    ],
+    "invitations": [
+      "id"
+    ],
+    "schema_versions": [
+      "version"
+    ],
+    "workspaces": [
+      "id"
+    ]
+  },
+  "tables": [
+    "schema_versions",
+    "users",
+    "workspaces",
+    "memberships",
+    "workspace_state",
+    "invitations"
+  ],
+  "project": "northstaros-task-management",
+  "allowedTables": [
+    "schema_versions",
+    "users",
+    "workspaces",
+    "memberships",
+    "workspace_state",
+    "invitations",
+    "sessions",
+    "rate_guards"
+  ],
+  "format": "sqlite"
+}

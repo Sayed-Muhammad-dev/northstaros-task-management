@@ -12,7 +12,12 @@
     "typecheck": "tsc --noEmit",
     "lint": "oxlint",
     "test": "node --import tsx --test tests/*.test.ts",
-    "test:browser": "node scripts/verify-northstar.mjs"
+    "test:browser": "node scripts/verify-northstar.mjs",
+    "db:migrate:deploy": "node --env-file-if-exists=.env scripts/migrate-neon.mjs",
+    "db:migrate:status": "node --env-file-if-exists=.env migration-tools/node_modules/prisma/build/index.js migrate status",
+    "db:import:preview": "node --env-file-if-exists=.env scripts/import-neon.mjs",
+    "db:import:neon": "node --env-file-if-exists=.env scripts/import-neon.mjs --apply",
+    "db:tools:install": "npm --prefix migration-tools install"
   },
   "allowScripts": {
     "esbuild@0.28.2": true

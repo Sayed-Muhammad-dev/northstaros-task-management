@@ -12,3 +12,5 @@ build
 .browser-evidence/
 *.tsbuildinfo
 .server/
+
+migration-tools/node_modules/

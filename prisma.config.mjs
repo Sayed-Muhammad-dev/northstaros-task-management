@@ -1,0 +1,2 @@
+import {defineConfig} from './migration-tools/node_modules/prisma/config.js';
+export default defineConfig({schema:'prisma/schema.prisma',migrations:{path:'prisma/migrations'},datasource:{url:process.env.DIRECT_URL||process.env.DATABASE_URL}});
